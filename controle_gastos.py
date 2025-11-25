@@ -6,11 +6,13 @@ import os
 from datetime import datetime
 from rich.console import Console
 from rich.table import Table
+from openpyxl import Workbook  # para exportar para Excel
 
 sys.stdout.reconfigure(encoding='utf-8')
 
 console = Console()
 ARQUIVO_CSV = "gastos.csv"
+
 
 class Transacao:
     def __init__(self, data, tipo, categoria, descricao, valor):
@@ -19,6 +21,7 @@ class Transacao:
         self.categoria = categoria.title()
         self.descricao = descricao
         self.valor = float(valor)
+
 
 class ControleFinanceiro:
     def __init__(self):
@@ -32,7 +35,8 @@ class ControleFinanceiro:
             leitor = csv.DictReader(arquivo)
             for linha in leitor:
                 self.transacoes.append(Transacao(
-                    linha["data"], linha["tipo"], linha["categoria"], linha["descricao"], float(linha["valor"])
+                    linha["data"], linha["tipo"], linha["categoria"],
+                    linha["descricao"], float(linha["valor"])
                 ))
 
     def salvar_dados(self):
@@ -42,8 +46,11 @@ class ControleFinanceiro:
             escritor.writeheader()
             for t in self.transacoes:
                 escritor.writerow({
-                    "data": t.data, "tipo": t.tipo, "categoria": t.categoria,
-                    "descricao": t.descricao, "valor": f"{t.valor:.2f}"
+                    "data": t.data,
+                    "tipo": t.tipo,
+                    "categoria": t.categoria,
+                    "descricao": t.descricao,
+                    "valor": f"{t.valor:.2f}"
                 })
 
     def registrar_transacao(self):
@@ -51,17 +58,20 @@ class ControleFinanceiro:
             data = input("Data (dd/mm/aaaa) [ENTER = hoje]: ").strip()
             if not data:
                 data = datetime.now().strftime("%d/%m/%Y")
+
             tipo = input("Tipo (R = Receita / D = Despesa): ").strip().upper()
             if tipo not in ("R", "D"):
                 console.print("[red]Tipo inválido! Digite R para receita ou D para despesa.[/red]")
                 return
+
             categoria = input("Categoria (ex: alimentação, transporte, lazer): ").strip()
             descricao = input("Descrição: ").strip()
             valor = float(input("Valor (R$): ").replace(",", "."))
+
             nova = Transacao(data, tipo, categoria, descricao, valor)
             self.transacoes.append(nova)
             self.salvar_dados()
-            console.print("[green]✅ Transação registrada com sucesso![/green]\n")
+            console.print("[green]Transação registrada com sucesso![/green]\n")
         except ValueError:
             console.print("[red]Erro: valor inválido. Digite um número válido.[/red]\n")
 
@@ -69,16 +79,25 @@ class ControleFinanceiro:
         if not self.transacoes:
             console.print("[yellow]Nenhuma transação registrada.[/yellow]\n")
             return
+
         tabela = Table(title="Histórico de Transações")
         tabela.add_column("Data", justify="center")
         tabela.add_column("Tipo")
         tabela.add_column("Categoria")
         tabela.add_column("Descrição")
         tabela.add_column("Valor (R$)", justify="right")
+
         for t in self.transacoes:
             cor = "green" if t.tipo == "R" else "red"
             tipo_str = "Receita" if t.tipo == "R" else "Despesa"
-            tabela.add_row(t.data, tipo_str, t.categoria, t.descricao, f"[{cor}]{t.valor:.2f}[/{cor}]")
+            tabela.add_row(
+                t.data,
+                tipo_str,
+                t.categoria,
+                t.descricao,
+                f"[{cor}]{t.valor:.2f}[/{cor}]"
+            )
+
         console.print(tabela)
 
     def calcular_saldo(self):
@@ -90,16 +109,20 @@ class ControleFinanceiro:
         if not self.transacoes:
             console.print("[yellow]Nenhum dado disponível para resumo.[/yellow]")
             return
+
         resumo = {}
         for t in self.transacoes:
             resumo.setdefault(t.categoria, 0)
             resumo[t.categoria] += t.valor if t.tipo == "R" else -t.valor
+
         tabela = Table(title="Resumo por Categoria")
         tabela.add_column("Categoria")
         tabela.add_column("Saldo (R$)", justify="right")
+
         for cat, valor in resumo.items():
             cor = "green" if valor >= 0 else "red"
             tabela.add_row(cat, f"[{cor}]{valor:.2f}[/{cor}]")
+
         console.print(tabela)
 
     def exportar_json(self):
@@ -108,6 +131,37 @@ class ControleFinanceiro:
         with open(nome, "w", encoding="utf-8") as arquivo:
             json.dump(dados, arquivo, ensure_ascii=False, indent=4)
         console.print(f"[green]Dados exportados com sucesso para '{nome}'.[/green]\n")
+
+    def zerar_transacoes(self):
+        confirm = input("Tem certeza que deseja apagar TODAS as transações? (s/n): ").strip().lower()
+        if confirm == "s":
+            self.transacoes = []
+            self.salvar_dados()
+            console.print("[red]Todas as transações foram apagadas![/red]\n")
+        else:
+            console.print("[yellow]Operação cancelada.[/yellow]\n")
+
+    def exportar_excel(self):
+        if not self.transacoes:
+            console.print("[yellow]Nenhuma transação para exportar.[/yellow]\n")
+            return
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Transações"
+
+        # Cabeçalhos
+        ws.append(["Data", "Tipo", "Categoria", "Descrição", "Valor (R$)"])
+
+        # Dados
+        for t in self.transacoes:
+            tipo_str = "Receita" if t.tipo == "R" else "Despesa"
+            ws.append([t.data, tipo_str, t.categoria, t.descricao, t.valor])
+
+        nome_arquivo = "gastos_exportados.xlsx"
+        wb.save(nome_arquivo)
+        console.print(f"[green]Arquivo Excel exportado com sucesso como '{nome_arquivo}'.[/green]\n")
+
 
 def menu():
     sistema = ControleFinanceiro()
@@ -118,8 +172,12 @@ def menu():
         console.print("3. Consultar saldo atual")
         console.print("4. Resumo por categoria")
         console.print("5. Exportar dados para JSON")
+        console.print("6. Zerar todas as transações")
+        console.print("7. Exportar tabela para Excel")
         console.print("0. Sair")
+
         opcao = input("\nEscolha uma opção: ").strip()
+
         if opcao == "1":
             sistema.registrar_transacao()
         elif opcao == "2":
@@ -130,11 +188,16 @@ def menu():
             sistema.resumo_por_categoria()
         elif opcao == "5":
             sistema.exportar_json()
+        elif opcao == "6":
+            sistema.zerar_transacoes()
+        elif opcao == "7":
+            sistema.exportar_excel()
         elif opcao == "0":
             console.print("[blue]Encerrando o sistema... Até logo![/blue]")
             break
         else:
             console.print("[red]Opção inválida. Tente novamente.[/red]")
+
 
 if __name__ == "__main__":
     menu()
